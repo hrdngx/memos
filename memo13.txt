@@ -1,0 +1,19 @@
+fun formatCreatedAtJapanese(createdAt: String): String {
+    return try {
+        // "2025-03-10T07-14:45.000Z" に合わせたパターン
+        val parser = SimpleDateFormat("yyyy-MM-dd'T'HH-mm:ss.SSS'Z'", Locale.getDefault())
+        // サーバー側の日時がUTCの場合、タイムゾーンを指定しておく
+        parser.timeZone = TimeZone.getTimeZone("UTC")
+        val date = parser.parse(createdAt)
+        if (date != null) {
+            // 日本語形式（例："2025年3月10日(火)"）に変換
+            val formatter = SimpleDateFormat("yyyy年M月d日'('E')'", Locale.JAPAN)
+            formatter.format(date)
+        } else {
+            createdAt
+        }
+    } catch (e: Exception) {
+        Log.e(TAG, "日付のパースエラー", e)
+        createdAt
+    }
+}
