@@ -1,0 +1,8 @@
+val coroutineScope = rememberCoroutineScope()
+                                coroutineScope.launch {
+                                    try {
+                                        val detailsR
+
+において、
+@Composable invocations can only happen from the context of a @Composable function
+というエラーが出ます
