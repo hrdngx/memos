@@ -1,0 +1,67 @@
+@Composable
+fun TaskParticipantsScreen(
+    taskId: Int,
+    navController: NavHostController,
+    snackbarHostState: SnackbarHostState
+) {
+    var participants by remember { mutableStateOf(listOf<Participant>()) }
+    var isLoading by remember { mutableStateOf(true) }
+    val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(taskId) {
+        try {
+            val response = RetrofitClient.apiService.getTaskParticipants(taskId)
+            if (response.success) {
+                participants = response.participants
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "参加者取得エラー", e)
+        } finally {
+            isLoading = false
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text("参加者一覧") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = LightColorScheme.primary)
+            )
+        },
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+    ) { padding ->
+        if (isLoading) {
+            Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
+                items(participants) { user ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (user.profileImageBase64 != null) {
+                            ProfileImage(user.profileImageBase64, modifier = Modifier.size(40.dp))
+                        } else {
+                            Icon(
+                                imageVector = Icons.Filled.Person,
+                                contentDescription = "Profile",
+                                modifier = Modifier.size(40.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(user.displayName)
+                    }
+                }
+            }
+        }
+    }
+}
