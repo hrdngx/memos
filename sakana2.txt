@@ -1,0 +1,179 @@
+const express = require('express');
+const mysql = require('mysql2');
+const crypto = require('crypto');
+
+const app = express();
+app.use(express.json({ limit: '10mb' }));
+
+// MySQL 接続設定
+const db = mysql.createConnection({
+  host: 'localhost',
+  user: 'root',
+  password: 'root12345',
+  database: 'taskun_data'
+});
+
+db.connect(err => {
+  if (err) {
+    console.error('MySQL 接続エラー:', err);
+    process.exit(1);
+  }
+  console.log('MySQL に接続しました。');
+});
+
+function validateString(input, fieldName, minLen = 1, maxLen = 100) {
+  if (!input || typeof input !== 'string' || input.trim().length < minLen) {
+    return `${fieldName}は必須です。`;
+  }
+  if (input.length > maxLen) {
+    return `${fieldName}は${maxLen}文字以内で入力してください。`;
+  }
+  if (/[*<>]/.test(input)) {
+    return `${fieldName}に不正な文字が含まれています。`;
+  }
+  return null;
+}
+
+// ----------------------
+// 認証エンドポイント
+app.post('/register', (req, res) => {
+  const { username, password, displayName } = req.body;
+  let error = validateString(username, "ユーザーネーム", 1, 50) ||
+              validateString(password, "パスワード", 6, 255) ||
+              validateString(displayName, "表示名", 1, 100);
+  if (error) {
+    return res.status(400).json({ success: false, message: error });
+  }
+  const checkQuery = 'SELECT * FROM users WHERE username = ?';
+  db.query(checkQuery, [username], (err, results) => {
+    if (err) {
+      console.error(err);
+      return res.status(500).json({ success: false, message: 'データベースエラー' });
+    }
+    if (results.length > 0) {
+      return res.status(400).json({ success: false, message: '既に存在するユーザ名です。' });
+    }
+    const insertQuery = 'INSERT INTO users (username, password, display_name, status) VALUES (?, ?, ?, "進行中")';
+    db.query(insertQuery, [username, password, displayName], (err, result) => {
+      if (err) {
+        console.error(err);
+        return res.status(500).json({ success: false, message: 'データベースエラー' });
+      }
+      const token = crypto.randomBytes(16).toString('hex');
+      res.json({ success: true, token, userId: result.insertId });
+    });
+  });
+});
+
+app.post('/login', (req, res) => {
+  const { username, password } = req.body;
+  let error = validateString(username, "ユーザーネーム", 1, 50) || validateString(password, "パスワード", 6, 255);
+  if (error) {
+    return res.status(400).json({ success: false, message: error });
+  }
+  const query = 'SELECT * FROM users WHERE username = ? AND password = ?';
+  db.query(query, [username, password], (err, results) => {
+    if (err) {
+      console.error(err);
+      return res.status(500).json({ success: false, message: 'データベースエラー' });
+    }
+    if (results.length === 0) {
+      return res.status(400).json({ success: false, message: 'ユーザ名またはパスワードが正しくありません。' });
+    }
+    const token = crypto.randomBytes(16).toString('hex');
+    res.json({ success: true, token, userId: results[0].id });
+  });
+});
+
+// ----------------------
+// タスク関連エンドポイント
+app.get('/tasks', (req, res) => {
+  if (req.query.sort === 'votes') {
+    // 投票数で並べ替え、かつ各タスクに対し総投票数と正式決定フラグを算出
+    const query = `
+      SELECT t.id, t.title, t.description, t.created_at, t.status,
+             u.display_name, u.profile_image, u.id as creatorId,
+             COALESCE(SUM(sv.vote), 0) as totalVotes,
+             IF(MAX(ts.finalized) IS NULL, false, MAX(ts.finalized)) as isFinalized
+      FROM tasks t
+      JOIN users u ON t.creator_id = u.id
+      LEFT JOIN task_schedules ts ON t.id = ts.task_id
+      LEFT JOIN schedule_votes sv ON ts.id = sv.schedule_id
+      GROUP BY t.id, t.title, t.description, t.created_at, t.status, u.display_name, u.profile_image, u.id
+      ORDER BY totalVotes DESC
+    `;
+    db.query(query, (err, results) => {
+      if (err) {
+        console.error(err);
+        return res.status(500).json({ success: false, message: 'データベースエラー' });
+      }
+      const tasks = results.map(task => ({
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        created_at: task.created_at,
+        status: task.status,
+        totalVotes: task.totalVotes,
+        isFinalized: task.isFinalized === 1 || task.isFinalized === true,
+        creatorDisplayName: task.display_name,
+        creatorProfileImage: task.profile_image ? Buffer.from(task.profile_image).toString('base64') : null,
+        creatorId: task.creatorId
+      }));
+      res.json({ success: true, tasks });
+    });
+  } else {
+    // デフォルトは作成日時の降順
+    const query = `
+      SELECT tasks.id, tasks.title, tasks.description, tasks.created_at, tasks.status,
+             users.display_name, users.profile_image, users.id as creatorId
+      FROM tasks 
+      JOIN users ON tasks.creator_id = users.id
+      ORDER BY tasks.created_at DESC
+    `;
+    db.query(query, (err, results) => {
+      if (err) {
+        console.error(err);
+        return res.status(500).json({ success: false, message: 'データベースエラー' });
+      }
+      const tasks = results.map(task => ({
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        created_at: task.created_at,
+        status: task.status,
+        totalVotes: 0,
+        isFinalized: false,
+        creatorDisplayName: task.display_name,
+        creatorProfileImage: task.profile_image ? Buffer.from(task.profile_image).toString('base64') : null,
+        creatorId: task.creatorId
+      }));
+      res.json({ success: true, tasks });
+    });
+  }
+});
+
+app.post('/tasks', (req, res) => {
+  const { userId, title, description } = req.body;
+  let error = validateString(title, "タスクタイトル", 1, 50) || validateString(description, "タスク説明", 1, 200);
+  if (!userId || error) {
+    return res.status(400).json({ success: false, message: error || 'userIdは必須です。' });
+  }
+  const query = 'INSERT INTO tasks (title, description, creator_id, status) VALUES (?, ?, ?, "進行中")';
+  db.query(query, [title, description, userId], (err, result) => {
+    if (err) {
+      console.error(err);
+      return res.status(500).json({ success: false, message: 'データベースエラー' });
+    }
+    res.json({ success: true, taskId: result.insertId });
+  });
+});
+
+// 以下、タスク編集／完了、タスク参加、プロフィール取得／更新、スケジュール追加／編集／削除、投票処理等のエンドポイントは従来通り実装
+// …
+
+const PORT = process.env.PORT || 3000;
+const HOST  = '172.18.12.114';
+
+app.listen(PORT, HOST, () => {
+  console.log(`サーバーは ${HOST}:${PORT} で起動中です。`);
+});
