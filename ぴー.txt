@@ -1,0 +1,203 @@
+@Composable
+fun TaskScheduleManagementScreen(
+    taskId: Int,
+    navController: NavHostController,
+    currentUserId: Int,
+    snackbarHostState: SnackbarHostState
+) {
+    if (taskId == 0) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("タスクが選択されていません。")
+            Spacer(modifier = Modifier.height(8.dp))
+            ElevatedButton(onClick = { navController.navigate("taskList") }) {
+                Text("タスクリストへ")
+            }
+        }
+        return
+    }
+
+    var taskData by remember { mutableStateOf<TaskData?>(null) }
+    var isTaskCompleted by remember { mutableStateOf(false) }
+    var showFinalizeDialog by remember { mutableStateOf(false) }
+
+    val scheduleViewModel: TaskScheduleViewModel = viewModel(factory = object : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T = TaskScheduleViewModel(taskId) as T
+    })
+
+    LaunchedEffect(taskId) {
+        try {
+            val tasksResponse = RetrofitClient.apiService.getTasks()
+            if (tasksResponse.success) {
+                val foundTask = tasksResponse.tasks.find { it.id == taskId }
+                if (foundTask != null) {
+                    taskData = foundTask
+                    isTaskCompleted = foundTask.status == "完了済み"
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "タスク取得エラー", e)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp)
+    ) {
+        taskData?.let { task ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (!task.creatorProfileImage.isNullOrEmpty()) {
+                    ProfileImage(task.creatorProfileImage, modifier = Modifier.size(40.dp))
+                } else {
+                    Icon(
+                        imageVector = Icons.Filled.Person,
+                        contentDescription = "Profile",
+                        modifier = Modifier.size(40.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(task.creatorDisplayName, style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+        Divider(modifier = Modifier.padding(vertical = 8.dp))
+
+        // タスク作成者であり、完了していない場合のみボタンを表示
+        taskData?.let { task ->
+            if (currentUserId == task.creatorId && !isTaskCompleted) {
+                ElevatedButton(
+                    onClick = { showFinalizeDialog = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("タスク完了")
+                }
+            }
+        }
+
+        // 完了済みの場合、画面全体の操作を無効化
+        if (isTaskCompleted) {
+            Text(
+                "このタスクは完了済みです。",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.padding(vertical = 16.dp)
+            )
+            return
+        }
+
+        // スケジュール登録フォーム
+        var selectedRange by remember { mutableStateOf<DateRange?>(null) }
+        var inputDescription by remember { mutableStateOf("") }
+        var allDay by remember { mutableStateOf(true) }
+        var inputStartTime by remember { mutableStateOf("00:00") }
+        var inputEndTime by remember { mutableStateOf("23:59") }
+        val coroutineScope = rememberCoroutineScope()
+
+        Text("スケジュール登録", style = MaterialTheme.typography.headlineMedium)
+        Spacer(modifier = Modifier.height(8.dp))
+        ImprovedCalendar(
+            selectedRange = selectedRange,
+            onRangeSelected = { selectedRange = it }
+        )
+        if (selectedRange != null) {
+            Text(
+                "選択範囲: ${formatJapaneseDateTime(selectedRange!!.start)} ～ ${formatJapaneseDateTime(selectedRange!!.end)}",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        } else {
+            Text("日付範囲を選択してください", style = MaterialTheme.typography.bodyMedium)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = allDay, onCheckedChange = { allDay = it })
+            Text("終日")
+        }
+        if (!allDay) {
+            TimePickerButton(label = "開始時刻", time = inputStartTime) { inputStartTime = it }
+            Spacer(modifier = Modifier.height(4.dp))
+            TimePickerButton(label = "終了時刻", time = inputEndTime) { inputEndTime = it }
+        }
+        OutlinedTextField(
+            value = inputDescription,
+            onValueChange = { inputDescription = it },
+            label = { Text("タスク説明（必須）") },
+            modifier = Modifier.fillMaxWidth(),
+            isError = inputDescription.isBlank()
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        ElevatedButton(
+            onClick = {
+                if (selectedRange != null && inputDescription.isNotBlank()) {
+                    val startDateTime = if (allDay)
+                        combineDateTime(selectedRange!!.start, "00:00")
+                    else
+                        combineDateTime(selectedRange!!.start, inputStartTime)
+                    val endDateTime = if (allDay)
+                        combineDateTime(selectedRange!!.end, "23:59")
+                    else
+                        combineDateTime(selectedRange!!.end, inputEndTime)
+
+                    scheduleViewModel.addSchedule(startDateTime, endDateTime, inputDescription, currentUserId)
+                    selectedRange = null
+                    inputDescription = ""
+                } else {
+                    coroutineScope.launch {
+                        snackbarHostState.showSnackbar("日付範囲とタスク説明を入力してください")
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = selectedRange != null && inputDescription.isNotBlank()
+        ) {
+            Text("送信")
+        }
+        Divider(modifier = Modifier.padding(vertical = 8.dp))
+
+        Text("登録済みタスク", style = MaterialTheme.typography.headlineSmall)
+        Spacer(modifier = Modifier.height(8.dp))
+
+        scheduleViewModel.schedules.forEach { schedule ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                shape = RoundedCornerShape(8.dp),
+                elevation = CardDefaults.cardElevation(4.dp)
+            ) {
+                Column(modifier = Modifier.padding(8.dp)) {
+                    Text(schedule.scheduleDescription, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+    }
+
+    // タスク完了確認ダイアログ
+    if (showFinalizeDialog) {
+        AlertDialog(
+            onDismissRequest = { showFinalizeDialog = false },
+            title = { Text("タスク完了確認") },
+            text = { Text("このタスクは本当に完了しましたか？") },
+            confirmButton = {
+                ElevatedButton(
+                    onClick = {
+                        showFinalizeDialog = false
+                        isTaskCompleted = true
+                        snackbarHostState.showSnackbar("タスクが完了しました。")
+                    }
+                ) {
+                    Text("はい")
+                }
+            },
+            dismissButton = {
+                ElevatedButton(onClick = { showFinalizeDialog = false }) {
+                    Text("いいえ")
+                }
+            }
+        )
+    }
+}
