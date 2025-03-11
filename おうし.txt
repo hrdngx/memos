@@ -1,0 +1,28 @@
+val coroutineScope = rememberCoroutineScope()
+
+// タスク完了確認ダイアログ
+if (showFinalizeDialog) {
+    AlertDialog(
+        onDismissRequest = { showFinalizeDialog = false },
+        title = { Text("タスク完了確認") },
+        text = { Text("このタスクは本当に完了しましたか？") },
+        confirmButton = {
+            ElevatedButton(
+                onClick = {
+                    showFinalizeDialog = false
+                    isTaskCompleted = true
+                    coroutineScope.launch {
+                        snackbarHostState.showSnackbar("タスクが完了しました。")
+                    }
+                }
+            ) {
+                Text("はい")
+            }
+        },
+        dismissButton = {
+            ElevatedButton(onClick = { showFinalizeDialog = false }) {
+                Text("いいえ")
+            }
+        }
+    )
+}
