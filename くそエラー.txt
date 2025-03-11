@@ -1,0 +1,2 @@
+ snackbarHostState.showSnackbar("タスクが完了しました。")
+Suspend function 'showSnackbar' should be called only from a coroutine or another suspend function
