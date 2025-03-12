@@ -1,0 +1,24 @@
+[Unit]
+Description=My Node.js App
+After=network.target
+
+[Service]
+# サービスを実行するユーザとグループ（必要に応じて変更）
+User=nodeuser
+Group=nodeuser
+
+# 実行コマンドの設定（絶対パスで書くのが望ましい）
+ExecStart=/usr/bin/node /path/to/server.js
+
+# このサービスの動作形態（Node.js の場合はsimpleが一般的）
+Type=simple
+
+# サービス実行時の作業ディレクトリ（ログ出力先を相対パス指定するなら必須）
+WorkingDirectory=/path/to
+
+# サービスが異常終了したときに再起動する設定（任意）
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
