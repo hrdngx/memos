@@ -1,0 +1,49 @@
+ElevatedButton(
+    onClick = {
+        coroutineScope.launch {
+            // タスクの存在を確認
+            try {
+                val tasksResponse = RetrofitClient.apiService.getTasks()
+                if (tasksResponse.success) {
+                    val currentTask = tasksResponse.tasks.find { it.id == taskId }
+                    if (currentTask == null) {
+                        // タスクが存在しない場合は通知してタスクリストへ戻る
+                        snackbarHostState.showSnackbar("このタスクは排除されました！！")
+                        navController.navigate("taskList") {
+                            popUpTo("taskScheduleManagement/$taskId") { inclusive = true }
+                        }
+                        return@launch
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "タスク存在チェックエラー", e)
+            }
+            
+            // タスクが存在していれば、通常のスケジュール登録処理へ
+            if (selectedRange != null && inputDescription.isNotBlank()) {
+                // 終日かどうかで時刻の扱いを変更し、日付と時刻を合体させる
+                val startDateTime = if (allDay)
+                    combineDateTime(selectedRange!!.start, "00:00")
+                else
+                    combineDateTime(selectedRange!!.start, inputStartTime)
+                val endDateTime = if (allDay)
+                    combineDateTime(selectedRange!!.end, "23:59")
+                else
+                    combineDateTime(selectedRange!!.end, inputEndTime)
+                
+                // ここでスケジュール登録の処理を実行
+                scheduleViewModel.addSchedule(startDateTime, endDateTime, inputDescription, currentUserId)
+                
+                // 入力内容の初期化
+                selectedRange = null
+                inputDescription = ""
+            } else {
+                snackbarHostState.showSnackbar("日付範囲とタスク説明を入力してください")
+            }
+        }
+    },
+    modifier = Modifier.fillMaxWidth(),
+    enabled = selectedRange != null && inputDescription.isNotBlank() && !isTaskCompleted
+) {
+    Text("送信")
+}
