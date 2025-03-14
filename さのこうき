@@ -1,0 +1,34 @@
+@Composable
+fun TaskScheduleManagementScreen(
+    taskId: Int,
+    navController: NavHostController,
+    currentUserId: Int,
+    snackbarHostState: SnackbarHostState
+) {
+    // ...（既存のコード）
+
+    // 現在ログイン中のユーザーの表示名を取得して利用する処理
+    var currentUserDisplayName by remember { mutableStateOf("") }
+    LaunchedEffect(currentUserId) {
+        try {
+            val profileResponse = RetrofitClient.apiService.getProfile(currentUserId)
+            if (profileResponse.success) {
+                currentUserDisplayName = profileResponse.displayName ?: ""
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "現在ユーザーのプロフィール取得エラー", e)
+        }
+    }
+
+    // Snackbar で入室メッセージを一度だけ表示するためのフラグ
+    var hasShownEntryMessage by remember { mutableStateOf(false) }
+    LaunchedEffect(currentUserDisplayName) {
+        if (currentUserDisplayName.isNotEmpty() && !hasShownEntryMessage) {
+            snackbarHostState.showSnackbar("$currentUserDisplayName 入室しました")
+            hasShownEntryMessage = true
+        }
+    }
+
+    // 以降、既存のUIコード（タスク情報の取得、画面UIなど）を記述
+    // ...
+}
