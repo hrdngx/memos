@@ -1,0 +1,48 @@
+@Composable
+fun TaskScheduleManagementScreen(
+    taskId: Int,
+    navController: NavHostController,
+    currentUserId: Int,
+    snackbarHostState: SnackbarHostState
+) {
+    var taskData by remember { mutableStateOf<TaskData?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
+    val coroutineScope = rememberCoroutineScope()
+
+    // タスク情報を取得
+    LaunchedEffect(taskId) {
+        try {
+            val tasksResponse = RetrofitClient.apiService.getTasks()
+            if (tasksResponse.success) {
+                taskData = tasksResponse.tasks.find { it.id == taskId }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "タスク取得エラー", e)
+        } finally {
+            isLoading = false
+        }
+    }
+
+    // タスクが削除されている場合の処理
+    if (!isLoading && taskData == null) {
+        // タスク削除の通知を中央に表示し、一定時間後にタスクリストへ戻る
+        LaunchedEffect(Unit) {
+            snackbarHostState.showSnackbar("このタスクは削除されました！！")
+            delay(2000)  // 2秒待機
+            navController.navigate("taskList") {
+                popUpTo("taskScheduleManagement/$taskId") { inclusive = true }
+            }
+        }
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                "このタスクは削除されました！！",
+                style = MaterialTheme.typography.headlineMedium,
+                color = Color.Red
+            )
+        }
+        return
+    }
+
+    // 既存の画面UIのコード…
+    // （例：タスクの詳細表示、スケジュール登録用UIなど）
+}
